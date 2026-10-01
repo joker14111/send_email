@@ -34,16 +34,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
 
-        console.log('=== DADOS RECEBIDOS ===');
+        console.log('=== DADOS RECEBIDOS (FOOTER) ===');
         console.log('Body completo:', JSON.stringify(req.body, null, 2));
         console.log('=== FIM DADOS ===');
 
-        const { nome, email, telefone, mensagem, arquivo_nome, arquivo_base64, arquivo_tipo } = req.body;
+        const { nome, email, telefone, mensagem } = req.body;
 
-        if (!nome || !email || !telefone) {
+        if (!nome || !email || !telefone || !mensagem) {
             return res.status(400).json({
                 success: false,
-                message: 'Nome, email e telefone são obrigatórios.'
+                message: 'Nome, email, telefone e mensagem são obrigatórios.'
             });
         }
 
@@ -99,7 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             from: '"Site Centro Médico Sapiranga" <Site@centroms.com.br>',
             to: process.env.RH_EMAIL,
             replyTo: email,
-            subject: `📋 Nova Candidatura - ${nome.substring(0, 30)}`,
+            subject: `📩 Novo Contato pelo Site - ${nome.substring(0, 30)}`,
             html: `
 <!DOCTYPE html>
 <html>
@@ -120,15 +120,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 <body>
   <div class="container">
     <div class="header">
-      <h2>Novo contato</h2>
-      <p>Mensagem enviada pelo formulário do site</p>
+      <h2>Novo Contato pelo Site</h2>
+      <p>Mensagem enviada pelo formulário de contato</p>
     </div>
     <div class="content">
       <div class="item"><span class="label">Nome:</span> ${nome}</div>
       <div class="item"><span class="label">Email:</span> ${email}</div>
       <div class="item"><span class="label">Telefone:</span> ${telefone}</div>
       ${mensagem ? `<div class="item"><span class="label">Mensagem:</span><br>${mensagem.replace(/\n/g, '<br>')}</div>` : ''}
-      ${arquivo_nome ? `<div class="item"><span class="label">Anexo:</span> ${arquivo_nome}</div>` : ''}
     </div>
     <div class="footer">
       Recebido em ${new Date().toLocaleString('pt-BR')}
@@ -138,65 +137,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 </html>
 `,
             text: `
-Novo contato - Formulário do site
+Novo Contato pelo Site
 
 Nome: ${nome}
 Email: ${email}
 Telefone: ${telefone}
 ${mensagem ? `Mensagem: ${mensagem}\n` : ''}
-${arquivo_nome ? `Anexo: ${arquivo_nome}\n` : ''}
 
 Data: ${new Date().toLocaleString('pt-BR')}
       `
         };
-
-        if (arquivo_base64 && arquivo_nome) {
-            console.log('=== PROCESSANDO ANEXO ===');
-            console.log('Nome do arquivo:', arquivo_nome);
-            console.log('Tipo do arquivo:', arquivo_tipo);
-            console.log('Tamanho do Base64:', arquivo_base64.length, 'caracteres');
-
-            if (!isValidBase64(arquivo_base64)) {
-                console.error('❌ Base64 inválido');
-                return res.status(400).json({
-                    success: false,
-                    message: 'Formato do arquivo inválido.'
-                });
-            }
-
-            try {
-                const buffer = Buffer.from(arquivo_base64, 'base64');
-                console.log('✅ Base64 válido - Tamanho decodificado:', buffer.length, 'bytes');
-
-                const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-                if (buffer.length > MAX_SIZE) {
-                    console.error(`❌ Arquivo muito grande: ${buffer.length} bytes (limite: ${MAX_SIZE} bytes)`);
-                    return res.status(400).json({
-                        success: false,
-                        message: `Arquivo muito grande. Tamanho máximo: ${MAX_SIZE / 1024 / 1024}MB`
-                    });
-                }
-
-                mailOptions.attachments = [
-                    {
-                        filename: arquivo_nome,
-                        content: arquivo_base64,
-                        encoding: 'base64',
-                        contentType: arquivo_tipo || getMimeType(arquivo_nome)
-                    }
-                ];
-
-                console.log('✅ Anexo configurado com sucesso');
-            } catch (bufferError: any) {
-                console.error('❌ Erro ao processar Base64:', bufferError.message);
-                return res.status(400).json({
-                    success: false,
-                    message: 'Erro ao processar o arquivo. Por favor, tente novamente.'
-                });
-            }
-        } else {
-            console.log('ℹ️ Nenhum arquivo para anexar');
-        }
 
         console.log('=== ENVIANDO EMAIL ===');
         try {
@@ -207,7 +157,7 @@ Data: ${new Date().toLocaleString('pt-BR')}
 
             return res.status(200).json({
                 success: true,
-                message: 'Candidatura enviada com sucesso!'
+                message: 'Mensagem enviada com sucesso!'
             });
 
         } catch (sendError: any) {
@@ -224,7 +174,7 @@ Data: ${new Date().toLocaleString('pt-BR')}
             if (sendError.code === 'EMESSAGE') {
                 return res.status(500).json({
                     success: false,
-                    message: 'Erro no conteúdo da mensagem. O arquivo pode estar muito grande.'
+                    message: 'Erro no conteúdo da mensagem.'
                 });
             }
 
@@ -244,42 +194,4 @@ Data: ${new Date().toLocaleString('pt-BR')}
             message: 'Erro interno no servidor. Por favor, tente novamente mais tarde.'
         });
     }
-}
-
-function isValidBase64(str: string): boolean {
-    try {
-        if (!str || typeof str !== 'string') {
-            return false;
-        }
-
-        if (str.length % 4 !== 0) {
-            return false;
-        }
-
-        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-        if (!base64Regex.test(str)) {
-            return false;
-        }
-
-        Buffer.from(str, 'base64');
-        return true;
-
-    } catch (e) {
-        return false;
-    }
-}
-
-function getMimeType(filename: string): string {
-    const extension = filename.toLowerCase().split('.').pop() || '';
-
-    const mimeTypes: Record<string, string> = {
-        'pdf': 'application/pdf',
-        'doc': 'application/msword',
-        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'txt': 'text/plain',
-        'rtf': 'application/rtf',
-        'odt': 'application/vnd.oasis.opendocument.text',
-    };
-
-    return mimeTypes[extension] || 'application/octet-stream';
 }
